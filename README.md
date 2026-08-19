@@ -55,33 +55,46 @@ git clone https://github.com/korisky/premise-audit-skill.git \
 
 For a project-local installation, use `.claude/skills/premise-audit`.
 
-### GitHub Copilot and VS Code
+### OpenCode
 
 ```bash
-mkdir -p ~/.agents/skills
+mkdir -p ~/.config/opencode/skills
 git clone https://github.com/korisky/premise-audit-skill.git \
-  ~/.agents/skills/premise-audit
+  ~/.config/opencode/skills/premise-audit
 ```
 
-GitHub Copilot also supports `~/.copilot/skills/premise-audit` for personal use
-and `.github/skills/premise-audit` or `.agents/skills/premise-audit` in a
-project. See GitHub's [agent skills documentation](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills).
+For a project-local installation, use `.opencode/skills/premise-audit`. See the
+[OpenCode skills documentation](https://opencode.ai/docs/skills).
 
-Other Agent Skills clients may use different discovery paths. Point the client
-at this directory rather than copying only `SKILL.md`, so future bundled
-resources remain available.
+### Pi
+
+```bash
+mkdir -p ~/.pi/agent/skills
+git clone https://github.com/korisky/premise-audit-skill.git \
+  ~/.pi/agent/skills/premise-audit
+```
+
+For a project-local installation, use `.pi/skills/premise-audit`. See the
+[Pi skills documentation](https://pi.dev/docs/latest/skills).
 
 ## Usage
 
 Agents may activate the skill automatically when a request contains a
-consequential unresolved decision. On clients that expose skills as commands:
+consequential unresolved decision. Claude Code and OpenCode expose it as:
 
 ```text
 /premise-audit
 /premise-audit --quick
 ```
 
-You can also ask the agent directly:
+Pi uses its skill command namespace:
+
+```text
+/skill:premise-audit
+/skill:premise-audit --quick
+```
+
+In Codex, select the skill or ask for it directly:
 
 ```text
 Use premise-audit before answering this request.
