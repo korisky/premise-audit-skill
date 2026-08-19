@@ -1,122 +1,128 @@
 ---
 name: premise-audit
-description: Surfaces the unstated assumptions, missing information, and typical failure mode behind an underspecified request, then asks the one or two questions that would actually change the answer — before writing any code. Also known as the steelman check or premise check. Use when the user says they are not sure what they really want, when a request is vague, open-ended, or architecturally high-stakes ("should we", "what's the best way to", "design X", "how do I approach"), or when the user invokes /premise-audit. Do NOT use for well-specified, mechanical, or low-stakes tasks.
-allowed-tools: Read, Grep, Glob, Bash, AskUserQuestion, mcp__semble__search, mcp__semble__find_related, mcp__codegraph__codegraph_explore
+description: Audit consequential ambiguity before answering or implementing. Surface the assumptions an answer would require, identify missing information that creates materially different paths, and ask one or two concrete choice questions. Use when the user explicitly requests a premise or assumption audit, says they are unsure what they want, or leaves an unresolved goal, success criterion, or high-cost architectural decision. Do not auto-activate merely because a request says "should we" or "how should I"; skip automatic use for well-specified, mechanical, low-stakes, or easily reversible work.
 ---
 
 # Premise Audit
 
-The user has asked for something before they are sure what they want. Your job
-is **not** to answer. Your job is to make the real question visible, then stop.
+Make the real question visible before answering it. Do not answer the original
+question, propose a plan, or modify files during the audit.
 
-The output is only worth reading if it is grounded in **this** codebase. Generic
-consulting-speak ("you're assuming your users want this") is a failure, not a
-partial success. Every claim cites a file, a line, or an observed fact.
+Ground the audit in available evidence. For an existing codebase, cite files,
+lines, tests, configuration, schemas, dependencies, or observed behavior. For a
+greenfield or process request, cite stated conversational constraints and label
+important missing evidence explicitly. Generic consulting advice is a failure.
 
-## Step 0 — Abort check
+## Step 0: Decide whether to audit
 
-Before anything else, decide whether this request actually needs an audit.
+Always audit when the user explicitly invokes this skill or asks for a premise
+or assumption audit.
 
-**Abort and just do the work** if the request is:
-- mechanically specified (rename this, fix this typo, add this field)
+For automatic activation, continue with the original task without an audit when
+it is:
+
+- mechanically specified
 - low-stakes and easily reversed
-- already accompanied by clear constraints and acceptance criteria
+- accompanied by clear constraints and acceptance criteria
+- missing no information that would materially change the answer
 
-If aborting, say so in one line — "This is well-specified; skipping the premise
-audit and proceeding." — and get on with the task. Do not audit a two-line fix.
-A skill that fires on everything gets uninstalled.
+Do not announce that an automatically activated audit was skipped. A skill that
+interrupts clear work will be disabled.
 
-## Step 1 — Bounded recon
+## Step 1: Run bounded reconnaissance
 
-Read enough of the real system to say something specific. Budget, and hold it:
+Read only enough of the system to identify consequential decision forks. Use
+whatever read and search capabilities the host agent provides. Keep within:
 
-- ≤ 3 searches
-- ≤ 5 files actually opened
-- ≤ 2 minutes of shell (dependency manifest, test layout, git log on the
-  relevant paths, whatever is cheap and load-bearing)
+- 3 searches
+- 5 opened files
+- 2 minutes of shell exploration
 
-Prioritise: the code the request would touch, its callers, its tests, and any
-config or schema that pins behaviour. Skip anything you will not cite.
+Prioritize the code the request would affect, its callers, its tests, and any
+configuration or schema that constrains behavior. Do not inspect material that
+will not support the audit.
 
-If the request is not about an existing codebase (greenfield, tooling choice,
-process question), skip recon and ground the audit in the constraints the user
-has already stated elsewhere in the conversation instead.
+For greenfield, tooling, or process questions, skip repository reconnaissance.
+Use facts and constraints already present in the conversation. Treat absent
+requirements as missing evidence, not as facts.
 
-## Step 2 — Emit exactly three sections
+## Step 2: Write the audit
 
-### 1. Assumptions you are making that you haven't stated
+Emit these three sections in order.
 
-Rank by **blast radius** — what breaks worst if the assumption is wrong — not by
-how clever the observation is. Aim for 3–5. Each one:
+### 1. Assumptions an answer would currently require
 
-- names the assumption in the user's own terms
-- cites the concrete thing that makes it questionable (`path/file.go:88`, a
-  dependency version, a missing test, a schema constraint)
-- states the consequence if it turns out false
+Rank 3-5 assumptions by blast radius. Use fewer when fewer are justified. Each
+item must:
 
-> Bad: "You're assuming the current design scales."
-> Good: "You're assuming retries are safe to add at the transport layer — but
-> `internal/client/post.go:88` sends a non-idempotent POST with no request key,
-> so a retry on timeout double-charges. Nothing in `post_test.go` covers this."
+- state what the agent would have to assume, in the user's terms
+- cite the evidence that makes the assumption uncertain
+- state what fails or changes if the assumption is false
+
+Use `path/file.go:88` citations when repository evidence exists. For non-code
+requests, identify the relevant stated constraint or explicitly missing fact.
+
+> Weak: "You are assuming the current design scales."
+>
+> Strong: "To add retries at the transport layer, I would have to assume requests
+> are idempotent. `internal/client/post.go:88` sends a POST without an idempotency
+> key, so that assumption being false can duplicate a charge."
 
 ### 2. Information that would significantly change the answer
 
-Not a wishlist. Each item must have a **decision fork** attached: if it's A the
-answer is X, if it's B the answer is Y. If you cannot name both branches, the
-information does not belong on this list. Aim for 2–4.
+List 2-4 missing facts. Attach a decision fork to each: if the answer is A, the
+recommendation moves toward X; if it is B, it moves toward Y. Exclude anything
+that would not alter the recommendation or implementation.
 
-### 3. The most common mistake with this class of request
+### 3. Most likely failure mode here
 
-One paragraph. The failure mode people walk into when they ask *this kind* of
-question — the local-maximum solution, the premature abstraction, the thing that
-works until the second use case. Be specific about the class; "not thinking it
-through" is not an answer.
+Write one paragraph describing the specific failure mode this request is at risk
+of. Tie it to an assumption or decision fork already identified. Do not claim a
+failure is common or statistically likely without evidence.
 
-## Step 3 — Ask, with options
+## Step 3: Ask the deciding questions
 
-Call `AskUserQuestion`. This is mandatory and it is the mechanism that ends your
-turn — do not replace it with a question in prose.
+Ask no more than 1-2 questions. Ask only questions whose answers change what
+would be built or recommended.
 
-Rules:
-- **1–2 questions maximum.** Only the ones whose answers change what you'd build.
-- 3–4 options each, and each option must be a genuinely different path, not a
-  shade of the same one.
-- Options must be **concrete and recognisable**, because the user's stated
-  problem is that they can't articulate what they want. Recognition is easier
-  than generation — do the articulating for them.
-- Lead with your recommendation and mark it `(Recommended)`.
-- Do not add an "Other" option; the harness supplies one.
+- Provide 3-4 concrete, genuinely different options for each question.
+- Put the recommended option first and mark it `(Recommended)`.
+- Prefer recognition over generation: articulate the viable paths for the user.
+- Do not add an `Other` option when the host supplies one automatically.
+- Use a structured question tool when one is available. Otherwise, render the
+  questions and options in prose after the three audit sections.
 
 > Weak: "What are your priorities here?"
-> Strong: "What should happen when a retry hits an in-flight request?"
-> — Idempotency key on the client, dedupe server-side (Recommended)
-> — Fail closed: surface the timeout, let the caller decide
-> — Accept the duplicate; reconcile in the nightly job
+>
+> Strong: "What should happen when a retry meets an in-flight request?"
+>
+> 1. Use a client idempotency key and deduplicate server-side (Recommended)
+> 2. Fail closed and let the caller decide whether to retry
+> 3. Accept duplicates and reconcile them later
 
-## Step 4 — Hard stop
+## Step 4: Stop
 
-After `AskUserQuestion`, **end your turn**. Do not answer the original question.
-Do not draft the implementation "to save a round trip." Do not append a plan.
-The audit is the entire deliverable for this turn.
+After presenting the questions, end the response. Do not answer the original
+request, draft an implementation, or append a plan. If a structured question
+tool returns an answer during the same execution, retain the answer but still do
+not proceed with the original task until the user's next message.
 
-Once the user answers, the audit is complete and normal work resumes — proceed
-with the actual task, informed by what you just learned. Pairs well with plan
-mode: audit → answer → plan.
+After the user answers, respond to the clarified request normally. Do not assume
+they want implementation unless they asked for it. If their answer exposes one
+new consequential fork, ask one narrower follow-up instead of repeating the full
+audit.
 
 ## Quick mode
 
-If invoked as `/premise-audit --quick`, or if the user asks for the assumptions
-without the interrogation: emit section 1 only, skip recon beyond a single
-search, skip `AskUserQuestion`, and stop. No question, no answer.
+When invoked with `--quick`, or when the user requests assumptions without
+questions, emit section 1 only. Use at most one targeted lookup, ask no question,
+and do not answer the original request.
 
 ## Anti-patterns
 
-- **Fortune cookie.** Assumptions that would apply to any project. If you could
-  have written it without reading the code, delete it.
-- **Padding to five.** Three sharp assumptions beat five with two invented ones.
-- **Interrogation.** More than two questions and the user gives up and says
-  "just do whatever." One good question outperforms four mediocre ones.
-- **Sneaking in the answer.** "You're assuming X — anyway, here's the
-  implementation." No. Stop at the question.
-- **Recon sprawl.** Reading thirty files to audit a request is its own failure;
-  you have spent the user's context on the preamble.
+- **Fortune cookie:** Delete assumptions that could have been written without
+  reading the available evidence.
+- **Padding:** Three supported assumptions beat five with two invented ones.
+- **Interrogation:** More than two questions pushes the work back onto the user.
+- **Sneaking in the answer:** The audit is the deliverable for this response.
+- **Reconnaissance sprawl:** Do not spend the context budget touring the repo.

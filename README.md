@@ -1,94 +1,130 @@
 # premise-audit
 
-A Claude Code skill that stops the agent from answering the wrong question well.
+An Agent Skills-compatible workflow for stopping a code agent from answering the
+wrong question well.
 
-Some requests aren't ready to be answered — not because they're badly written,
-but because you don't yet know what you want. The usual failure isn't that the
-agent gets it wrong; it's that it gets it *confidently right* about something
-you didn't mean.
+People often bring an agent a request before the goal, constraints, or acceptable
+tradeoffs are fully clear. The usual failure is not a nonsensical answer. It is a
+confident, technically sound answer to a question nobody meant to ask.
 
-`premise-audit` makes the agent stop, read your actual code, and tell you what
-you're assuming — before it writes anything.
+`premise-audit` makes the agent inspect the available evidence, expose the
+assumptions it would otherwise make, and ask only the questions that lead to
+materially different decisions.
 
 ## What it does
 
-Invoked on an underspecified request, the agent produces exactly three things
-and then stops:
+For an underspecified request, the agent produces:
 
-1. **Unstated assumptions** you're making — ranked by blast radius, each one
-   citing a real file and line
-2. **Information that would change the answer** — each with a decision fork
-   attached (if A then X, if B then Y)
-3. **The common mistake** people make with this class of request
+1. **Assumptions an answer would require**, ranked by blast radius and grounded
+   in repository or conversational evidence
+2. **Missing information that changes the answer**, with the decision fork made
+   explicit
+3. **The most likely failure mode here**, tied to the identified assumptions
 
-Then it asks one or two multiple-choice questions and **ends its turn**. No
-implementation, no plan, no "anyway, here's what I'd do."
+It then asks one or two concrete choice questions and stops. It does not answer
+the original request, propose a plan, or modify files during the audit.
+
+For an existing codebase, findings cite files, lines, tests, configuration, or
+observed behavior. For greenfield and process questions, findings cite stated
+constraints and identify missing evidence explicitly.
 
 ## Install
 
-The skill directory name must be `premise-audit` to match the frontmatter, and
-the repo is named `premise-audit-skill` — so pass the target path explicitly:
+This repository follows the open [Agent Skills specification](https://agentskills.io/specification).
+Clone it into a skills directory recognized by your agent. The destination
+directory must be named `premise-audit`.
+
+### Codex
 
 ```bash
+mkdir -p ~/.codex/skills
+git clone https://github.com/korisky/premise-audit-skill.git \
+  ~/.codex/skills/premise-audit
+```
+
+For a project-local installation, use `.agents/skills/premise-audit` when your
+Codex environment discovers project skills from that location.
+
+### Claude Code
+
+```bash
+mkdir -p ~/.claude/skills
 git clone https://github.com/korisky/premise-audit-skill.git \
   ~/.claude/skills/premise-audit
 ```
 
-Project-local instead of global? Clone to `.claude/skills/premise-audit` in your
-repo. Verify with `/premise-audit` — if it doesn't autocomplete, the directory
-name is wrong.
+For a project-local installation, use `.claude/skills/premise-audit`.
+
+### GitHub Copilot and VS Code
+
+```bash
+mkdir -p ~/.agents/skills
+git clone https://github.com/korisky/premise-audit-skill.git \
+  ~/.agents/skills/premise-audit
+```
+
+GitHub Copilot also supports `~/.copilot/skills/premise-audit` for personal use
+and `.github/skills/premise-audit` or `.agents/skills/premise-audit` in a
+project. See GitHub's [agent skills documentation](https://docs.github.com/en/copilot/concepts/agents/about-agent-skills).
+
+Other Agent Skills clients may use different discovery paths. Point the client
+at this directory rather than copying only `SKILL.md`, so future bundled
+resources remain available.
 
 ## Usage
 
-```
-/premise-audit          # explicit
-/premise-audit --quick  # assumptions only, no questions, no recon
+Agents may activate the skill automatically when a request contains a
+consequential unresolved decision. On clients that expose skills as commands:
+
+```text
+/premise-audit
+/premise-audit --quick
 ```
 
-It also fires on its own when a request is vague, high-stakes, or you say you're
-not sure what you want. It's told to **abort** on mechanical, well-specified,
-low-stakes work — auditing a typo fix is how a skill earns an uninstall.
+You can also ask the agent directly:
 
-Pairs well with plan mode: audit → answer → plan.
+```text
+Use premise-audit before answering this request.
+```
+
+Quick mode returns only the assumptions section, performs at most one targeted
+lookup, asks no questions, and stops.
+
+Automatic activation is deliberately conservative. Phrases such as "should we"
+or "how should I" are not sufficient by themselves. Mechanical, well-specified,
+low-stakes, and easily reversible tasks should proceed without interruption.
 
 ## What good output looks like
 
-The whole point is grounding. Generic advice is a failure, not a partial
-success:
+The key is evidence and attribution. The skill identifies assumptions the agent
+would need to make; it does not accuse the user of secretly holding them.
 
-> ❌ "You're assuming the current design scales."
+> Weak: "You are assuming the current design scales."
 
-> ✅ "You're assuming retries are safe to add at the transport layer — but
-> `internal/client/post.go:88` sends a non-idempotent POST with no request key,
-> so a retry on timeout double-charges. Nothing in `post_test.go` covers this."
+> Strong: "To add retries at the transport layer, I would have to assume requests
+> are idempotent. `internal/client/post.go:88` sends a POST without an idempotency
+> key, so that assumption being false can duplicate a charge."
 
-If the agent could have written it without reading your code, it shouldn't have
-written it.
+If the agent could have written the finding without inspecting the available
+evidence, it should not have written it.
 
-## Design notes
+## Portability and enforcement
 
-**The stop is enforced, not requested.** `allowed-tools` omits `Edit` and
-`Write`, so the agent *cannot* implement during an audit. Prose instructions to
-hold back lose to action bias a meaningful fraction of the time; a missing tool
-loses zero percent. The mandatory `AskUserQuestion` call is what actually ends
-the turn.
+The portable skill intentionally does not declare `allowed-tools`. Tool names,
+permission semantics, and structured-question APIs differ among agents, and the
+standard field is currently experimental.
 
-**Multiple choice, not open-ended.** The premise is that you can't articulate
-what you want — so an open question doesn't help; you'll answer it vaguely.
-Recognition beats generation. Concrete options do the articulating for you.
+The stop is a behavioral instruction. A `SKILL.md` file alone cannot guarantee a
+write lock or turn boundary across clients. Environments that require technical
+enforcement should add client-specific permissions or hooks that deny writes
+while the audit is active.
 
-**Recon is capped** at 3 searches and 5 files. Without a ceiling this becomes a
-repo tour, and you've spent your context window on the preamble to the real
-task.
+When a host offers a structured multiple-choice question tool, the skill uses
+it. Otherwise it prints the same options in prose and ends the response.
 
 ## Why not call it "steelman"?
 
-Steelmanning is constructing the strongest version of a position you *disagree
-with*. This is a different move: excavating unstated premises before you commit
-to any position. Naming it "steelman" pulls the behavior toward arguing the
-other side, which is less useful here. The word appears in the skill description
-so it still triggers if that's the phrase in your head.
-
-## License
-
-MIT
+Steelmanning constructs the strongest version of a position one disagrees with.
+This workflow instead uncovers premises before committing to a position. The
+description still uses familiar assumption-audit language for discovery without
+pulling the behavior toward debating the user.
